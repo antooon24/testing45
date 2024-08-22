@@ -25,8 +25,6 @@ admin.initializeApp({
 const db = admin.database();
 const app = express();
 const port = process.env.PORT || 3000;
-const clientId = process.env.ROBLOX_CLIENT_ID;
-const clientSecret = process.env.ROBLOX_CLIENT_SECRET;
 
 const cookieSecret = process.env.COOKIE_SECRET || generators.random();
 const secureCookieConfig = {
@@ -35,30 +33,17 @@ const secureCookieConfig = {
     signed: true,
 };
 
-// Middleware setup
 app.use(cookieParser(cookieSecret));
 app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
-        // Discover issuers
-        const robloxIssuer = await Issuer.discover(
-            "https://apis.roblox.com/oauth/.well-known/openid-configuration"
-        );
+        // Discover Discord issuer
         const discordIssuer = await Issuer.discover(
             "https://discord.com/.well-known/openid-configuration"
         );
 
-        // Create clients
-        const robloxClient = new robloxIssuer.Client({
-            client_id: clientId,
-            client_secret: clientSecret,
-            redirect_uris: ["https://testing45.onrender.com/oauth/roblox-callback"],
-            response_types: ["code"],
-            scope: "openid profile",
-            id_token_signed_response_alg: "ES256",
-        });
-
+        // Create Discord client
         const discordClient = new discordIssuer.Client({
             client_id: process.env.DISCORD_CLIENT_ID,
             client_secret: process.env.DISCORD_CLIENT_SECRET,
@@ -67,7 +52,6 @@ async function main() {
             scope: "identify",
         });
 
-        // Adjust clock tolerance
         custom.clock_tolerance = 180;
 
         // Middleware to check if the user is logged in
@@ -76,7 +60,7 @@ async function main() {
                 let tokenSet = new TokenSet(req.signedCookies.tokenSet);
 
                 if (tokenSet.expired()) {
-                    tokenSet = await robloxClient.refresh(tokenSet);
+                    tokenSet = await discordClient.refresh(tokenSet);
                     res.cookie("tokenSet", tokenSet, secureCookieConfig);
                 }
 
@@ -92,54 +76,6 @@ async function main() {
         });
 
         app.get("/login", (req, res) => {
-            const state = generators.state();
-            const nonce = generators.nonce();
-
-            res
-                .cookie("state", state, secureCookieConfig)
-                .cookie("nonce", nonce, secureCookieConfig)
-                .redirect(
-                    robloxClient.authorizationUrl({
-                        scope: robloxClient.scope,
-                        state,
-                        nonce,
-                    })
-                );
-        });
-
-        app.get("/oauth/roblox-callback", async (req, res) => {
-            const params = robloxClient.callbackParams(req);
-            const state = req.signedCookies.state;
-            const nonce = req.signedCookies.nonce;
-
-            if (!state || !nonce) {
-                return res.status(400).send('State or nonce missing in cookies');
-            }
-
-            try {
-                const tokenSet = await robloxClient.callback(
-                    "https://testing45.onrender.com/oauth/roblox-callback",
-                    params,
-                    { state, nonce }
-                );
-
-                const userClaims = tokenSet.claims();
-                const robloxData = {
-                    robloxId: userClaims.sub,
-                    robloxName: userClaims.name,
-                    robloxProfile: userClaims.profile,
-                    robloxPicture: userClaims.picture || null,
-                };
-
-                res.cookie("robloxData", robloxData, secureCookieConfig);
-                res.redirect("/oauth/discord-login");
-            } catch (error) {
-                console.error('Error during Roblox OAuth callback:', error);
-                res.status(500).send('Error during Roblox OAuth callback');
-            }
-        });
-
-        app.get("/oauth/discord-login", (req, res) => {
             const state = generators.state();
             res
                 .cookie("state", state, secureCookieConfig)
@@ -172,15 +108,10 @@ async function main() {
                     discordUsername: discordUser.preferred_username,
                 };
 
-                const robloxData = req.signedCookies.robloxData;
+                // Store user data in Firebase
+                await db.ref(`users/${discordData.discordId}`).set(discordData);
 
-                // Store combined data in Firebase
-                await db.ref(`users/${robloxData.robloxId}`).set({
-                    ...robloxData,
-                    ...discordData,
-                });
-
-                res.clearCookie("robloxData");
+                res.cookie("discordData", discordData, secureCookieConfig);
                 res.redirect("/home");
             } catch (error) {
                 console.error('Error during Discord OAuth callback:', error);
@@ -189,9 +120,8 @@ async function main() {
         });
 
         app.get("/home", checkLoggedIn, (req, res) => {
-            const robloxData = req.signedCookies.robloxData || {};
             const discordData = req.signedCookies.discordData || {};
-            res.send(getHomeHtml({ ...robloxData, ...discordData }));
+            res.send(getHomeHtml(discordData));
         });
 
         app.listen(port, () => {
