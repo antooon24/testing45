@@ -1,5 +1,5 @@
 import express from 'express';
-import { Issuer, custom, generators } from 'openid-client';
+import { Issuer, custom, generators, TokenSet } from 'openid-client';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
@@ -58,7 +58,7 @@ async function main() {
             if (req.signedCookies.tokenSet) {
                 let tokenSet;
                 try {
-                    tokenSet = new discordClient.TokenSet(req.signedCookies.tokenSet);
+                    tokenSet = new TokenSet(req.signedCookies.tokenSet);
 
                     if (tokenSet.expired()) {
                         tokenSet = await discordClient.refresh(tokenSet);
