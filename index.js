@@ -5,23 +5,17 @@ import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFile } from 'fs/promises';
 import dotenv from 'dotenv';
 
 dotenv.config();  // Load environment variables from .env file
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const serviceAccountPath = path.join(__dirname, '/serviceAccountKey.json');
 
-// Decode the base64 string from .env and parse it as JSON
-let serviceAccount;
-try {
-    const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-    const decodedServiceAccount = Buffer.from(serviceAccountBase64, 'base64').toString('utf8');
-    serviceAccount = JSON.parse(decodedServiceAccount);
-} catch (error) {
-    console.error('Error decoding or parsing the service account:', error);
-    process.exit(1);
-}
+// Load the service account credentials from environment variable
+const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'));
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -31,7 +25,7 @@ admin.initializeApp({
 const db = admin.database();
 
 const app = express();
-const port = process.env.ROBLOX_PORT || 3000;
+const port = process.env.PORT || 3000;  // Use PORT from environment or default to 3000
 const clientId = process.env.ROBLOX_CLIENT_ID;
 const clientSecret = process.env.ROBLOX_CLIENT_SECRET;
 
@@ -144,8 +138,8 @@ async function main() {
             console.log('User Claims:', userClaims);
 
             await db.ref(`users/${userClaims.sub}`).set({
-                nickname: userClaims.name,
-                username: userClaims.preferred_username,
+                name: userClaims.name,
+                nickname: userClaims.preferred_username,
                 profile: userClaims.profile,
                 picture: userClaims.picture,
             });
