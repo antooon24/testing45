@@ -1,10 +1,12 @@
 import express from 'express';
 import { Issuer, TokenSet, custom, generators } from 'openid-client';
+import { getHomeHtml } from './getHomeHtml.js';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import axios from 'axios';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -24,7 +26,6 @@ admin.initializeApp({
 const db = admin.database();
 const app = express();
 const port = process.env.PORT || 3000;
-
 const clientId = process.env.DISCORD_CLIENT_ID;
 const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 
@@ -40,7 +41,6 @@ app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
-        // Discover Discord issuer and create client
         const discordIssuer = await Issuer.discover(
             "https://discord.com/.well-known/openid-configuration"
         );
@@ -48,12 +48,13 @@ async function main() {
         const discordClient = new discordIssuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: ["https://testing45.onrender.com/oauth/discord-callback"], // Update with your actual redirect URI
+            redirect_uris: ["https://testing45.onrender.com/discord-callback"],
             response_types: ["code"],
             scope: "identify",
         });
 
-        custom.clock_tolerance = 180;
+        // Adjust clock tolerance for token handling
+        discordClient[custom.clock_tolerance] = 180;
 
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
@@ -65,7 +66,8 @@ async function main() {
                         res.cookie("tokenSet", tokenSet, secureCookieConfig);
                     } catch (error) {
                         console.error('Error refreshing token:', error);
-                        return res.redirect("/login");
+                        res.redirect("/login");
+                        return;
                     }
                 }
 
@@ -81,8 +83,6 @@ async function main() {
 
         app.get("/login", (req, res) => {
             const state = generators.state();
-            console.log('Setting state cookie:', state);
-
             res
                 .cookie("state", state, secureCookieConfig)
                 .redirect(
@@ -97,28 +97,33 @@ async function main() {
             const params = discordClient.callbackParams(req);
             const state = req.signedCookies.state;
 
-            console.log('State from cookies:', state);
-
             if (!state) {
                 return res.status(400).send('State missing in cookies');
             }
 
             try {
                 const tokenSet = await discordClient.callback(
-                    "https://testing45.onrender.com/oauth/discord-callback", // Update with your actual redirect URI
+                    "https://testing45.onrender.com/discord-callback",
                     params,
                     { state }
                 );
 
-                const discordUser = tokenSet.claims();
+                // Fetch user info from Discord
+                const user = await discordClient.userinfo(tokenSet.access_token);
                 const discordData = {
-                    discordId: discordUser.sub,
-                    discordUsername: discordUser.preferred_username,
+                    discordId: user.sub,
+                    discordUsername: user.preferred_username,
                 };
 
-                await db.ref(`users/${discordData.discordId}`).set(discordData);
+                const robloxData = req.signedCookies.robloxData;
 
-                res.cookie("discordData", discordData, secureCookieConfig);
+                // Store combined data in Firebase
+                await db.ref(`users/${robloxData.robloxId}`).set({
+                    ...robloxData,
+                    ...discordData,
+                });
+
+                res.clearCookie("robloxData");
                 res.redirect("/home");
             } catch (error) {
                 console.error('Error during Discord OAuth callback:', error);
@@ -127,8 +132,9 @@ async function main() {
         });
 
         app.get("/home", checkLoggedIn, (req, res) => {
+            const robloxData = req.signedCookies.robloxData || {};
             const discordData = req.signedCookies.discordData || {};
-            res.send(`<h1>Welcome ${discordData.discordUsername}</h1>`);
+            res.send(getHomeHtml({ ...robloxData, ...discordData }));
         });
 
         app.listen(port, () => {
