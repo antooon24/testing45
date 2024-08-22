@@ -12,13 +12,27 @@ dotenv.config();  // Load environment variables from .env file
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const serviceAccountPath = path.join(__dirname, '/serviceAccountKey.json');
+
+// Decode the base64 encoded service account JSON
+const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+if (!serviceAccountBase64) {
+    console.error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set.');
+    process.exit(1);
+}
+
+let serviceAccountJson;
+try {
+    serviceAccountJson = Buffer.from(serviceAccountBase64, 'base64').toString('utf8');
+} catch (error) {
+    console.error('Error decoding FIREBASE_SERVICE_ACCOUNT_KEY:', error);
+    process.exit(1);
+}
 
 let serviceAccount;
 try {
-    serviceAccount = JSON.parse(await readFile(serviceAccountPath, 'utf8'));
+    serviceAccount = JSON.parse(serviceAccountJson);
 } catch (error) {
-    console.error('Error reading service account file:', error);
+    console.error('Error parsing JSON for FIREBASE_SERVICE_ACCOUNT_KEY:', error);
     process.exit(1);
 }
 
