@@ -69,7 +69,7 @@ async function main() {
         const client = new issuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: [`https://your-web-app-url.com/oauth/callback`],
+            redirect_uris: [`https://testing45.onrender.com/oauth/callback`],
             response_types: ["code"],
             scope: "openid profile",
             id_token_signed_response_alg: "ES256",
@@ -101,10 +101,12 @@ async function main() {
         app.get("/login", (req, res) => {
             const state = generators.state();
             const nonce = generators.nonce();
+            const discordId = req.query.discordId; // Get the Discord ID from query params
 
             res
                 .cookie("state", state, secureCookieConfig)
                 .cookie("nonce", nonce, secureCookieConfig)
+                .cookie("discordId", discordId, secureCookieConfig) // Save the Discord ID in a cookie
                 .redirect(
                     client.authorizationUrl({
                         scope: client.scope,
@@ -126,16 +128,16 @@ async function main() {
             const params = client.callbackParams(req);
             const state = req.signedCookies.state;
             const nonce = req.signedCookies.nonce;
-            const { token, discordId } = req.query;
+            const discordId = req.signedCookies.discordId; // Get the Discord ID from cookies
 
-            if (!state || !nonce || !token || !discordId) {
-                console.error('State, nonce, token, or Discord ID missing.');
-                return res.status(400).send('State, nonce, token, or Discord ID missing.');
+            if (!state || !nonce || !discordId) {
+                console.error('State, nonce, or Discord ID missing.');
+                return res.status(400).send('State, nonce, or Discord ID missing.');
             }
 
             try {
                 const tokenSet = await client.callback(
-                    `https://your-web-app-url.com/oauth/callback`,
+                    `https://testing45.onrender.com/oauth/callback`,
                     params,
                     {
                         state,
@@ -147,30 +149,22 @@ async function main() {
                     .cookie("tokenSet", tokenSet, secureCookieConfig)
                     .clearCookie("state")
                     .clearCookie("nonce")
+                    .clearCookie("discordId")
                     .redirect("/home");
 
                 // Save user data to Firebase
                 const userClaims = tokenSet.claims();
                 console.log('User Claims:', userClaims);
 
-                // Update verification record with the Discord ID and user data
-                const verificationRef = db.ref(`verifications/${token}`);
-                const verificationRecord = await verificationRef.once('value');
+                await db.ref(`users/${userClaims.sub}`).set({
+                    name: userClaims.name,
+                    nickname: userClaims.preferred_username,
+                    profile: userClaims.profile,
+                    picture: userClaims.picture,
+                    discordId: discordId // Save Discord ID along with user data
+                });
 
-                if (verificationRecord.exists()) {
-                    await verificationRef.update({ verified: true });
-                    await db.ref(`users/${userClaims.sub}`).set({
-                        name: userClaims.name,
-                        nickname: userClaims.preferred_username,
-                        profile: userClaims.profile,
-                        picture: userClaims.picture,
-                        discordId: discordId
-                    });
-
-                    res.send('Your account has been verified!');
-                } else {
-                    res.status(400).send('Invalid verification token.');
-                }
+                res.send('Your account has been verified and linked to Discord!');
 
             } catch (error) {
                 console.error('Error handling OAuth callback:', error);
