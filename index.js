@@ -5,7 +5,6 @@ import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFile } from 'fs/promises';
 import dotenv from 'dotenv';
 
 // Load environment variables from .env file
@@ -171,35 +170,37 @@ async function main() {
             res.send(getHomeHtml(tokenSet.claims()));
         });
 
-        app.post("/message", checkLoggedIn, async (req, res) => {
-            const message = req.body.message;
-            const apiUrl = `https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic}`;
+        app.get("/verify", async (req, res) => {
+            const { token, discordId } = req.query;
 
-            try {
-                const result = await client.requestResource(
-                    apiUrl,
-                    req.signedCookies.tokenSet.access_token,
-                    {
-                        method: "POST",
-                        body: JSON.stringify({ message }),
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
-                    }
-                );
-                console.log(result);
-                res.sendStatus(result.statusCode);
-            } catch (error) {
-                console.error(error);
-                res.sendStatus(500);
+            if (!token || !discordId) {
+                return res.status(400).send('Verification token and Discord ID are required.');
+            }
+
+            // Retrieve the verification record from Firebase
+            const verificationRef = db.ref(`verifications/${token}`);
+            const verificationRecord = await verificationRef.once('value');
+
+            if (!verificationRecord.exists()) {
+                return res.status(400).send('Invalid verification token.');
+            }
+
+            const verificationData = verificationRecord.val();
+
+            // Verify the user and update the record
+            if (verificationData.discordId === discordId) {
+                await verificationRef.update({ verified: true });
+                res.send('Your account has been verified!');
+            } else {
+                res.status(400).send('Discord ID does not match.');
             }
         });
 
         app.listen(port, () => {
-            console.log(`Server is running on port: ${port}`);
+            console.log(`Server running at http://localhost:${port}`);
         });
     } catch (error) {
-        console.error('Error in main execution:', error);
+        console.error('Error in main function:', error);
         process.exit(1);
     }
 }
