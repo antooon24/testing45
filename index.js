@@ -1,5 +1,5 @@
 import express from 'express';
-import { Issuer, TokenSet, custom, generators } from 'openid-client';
+import { Issuer, custom, generators } from 'openid-client';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
@@ -64,8 +64,8 @@ async function main() {
                         res.cookie("tokenSet", tokenSet, secureCookieConfig);
                     } catch (error) {
                         console.error('Error refreshing token:', error);
-                        res.redirect("/login");
-                        return;
+                        // Redirect to login if refreshing fails
+                        return res.redirect("/login");
                     }
                 }
 
@@ -106,7 +106,7 @@ async function main() {
                     { state }
                 );
 
-                // Fetch user info from Discord
+                // Fetch user info from Discord using the access token
                 const user = await discordClient.userinfo(tokenSet.access_token);
                 const discordData = {
                     discordId: user.sub,
