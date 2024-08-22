@@ -42,9 +42,15 @@ async function main() {
             if (req.signedCookies.tokenSet) {
                 let tokenSet;
 
-                // Check if tokenSet is a valid JSON string
+                // Debug: Log the cookie value to understand its format
+                console.log('TokenSet cookie:', req.signedCookies.tokenSet);
+
                 try {
+                    // Attempt to parse the tokenSet cookie value
                     tokenSet = JSON.parse(req.signedCookies.tokenSet);
+
+                    // Debug: Log the parsed tokenSet
+                    console.log('Parsed tokenSet:', tokenSet);
                 } catch (parseError) {
                     console.error('Error parsing tokenSet:', parseError);
                     return res.status(400).send('Invalid token data');
