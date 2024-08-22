@@ -46,7 +46,7 @@ async function main() {
         const discordClient = new discordIssuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: ["https://testing45.onrender.com/oauth/discord-callback"], // Update with your actual redirect URI
+            redirect_uris: ["https://testing45.onrender.com/oauth/discord-callback"], // Updated redirect URI
             response_types: ["code"],
             scope: "identify",
         });
@@ -56,20 +56,20 @@ async function main() {
 
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
-                let tokenSet = new TokenSet(req.signedCookies.tokenSet);
+                let tokenSet;
+                try {
+                    tokenSet = new discordClient.TokenSet(req.signedCookies.tokenSet);
 
-                if (tokenSet.expired()) {
-                    try {
+                    if (tokenSet.expired()) {
                         tokenSet = await discordClient.refresh(tokenSet);
                         res.cookie("tokenSet", tokenSet, secureCookieConfig);
-                    } catch (error) {
-                        console.error('Error refreshing token:', error);
-                        // Redirect to login if refreshing fails
-                        return res.redirect("/login");
                     }
-                }
 
-                next();
+                    next();
+                } catch (error) {
+                    console.error('Error handling token:', error);
+                    res.redirect("/login");
+                }
             } else {
                 res.redirect("/login");
             }
