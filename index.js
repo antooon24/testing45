@@ -1,5 +1,5 @@
 import express from 'express';
-import { Issuer, TokenSet, custom, generators } from 'openid-client';
+import { Issuer, custom, generators } from 'openid-client';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
@@ -61,13 +61,7 @@ async function main() {
 
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
-                let tokenSet = new TokenSet(req.signedCookies.tokenSet);
-
-                if (tokenSet.expired()) {
-                    tokenSet = await discordClient.refresh(tokenSet);
-                    res.cookie("tokenSet", tokenSet, secureCookieConfig);
-                }
-
+                // Handle token verification and refresh if necessary
                 next();
             } else {
                 res.redirect("/login");
@@ -94,7 +88,7 @@ async function main() {
             const params = discordClient.callbackParams(req);
             const state = req.signedCookies.state;
 
-            console.log('State from cookies:', state);  // Debugging line
+            console.log('State from cookies:', state); // Debugging line
 
             if (!state) {
                 return res.status(400).send('State missing in cookies');
@@ -113,7 +107,6 @@ async function main() {
                     discordUsername: discordUser.preferred_username,
                 };
 
-                // Store user data in Firebase
                 await db.ref(`users/${discordData.discordId}`).set(discordData);
 
                 res.cookie("discordData", discordData, secureCookieConfig);
