@@ -41,7 +41,13 @@ app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
-        const discordIssuer = await Issuer.discover("https://discord.com/api/oauth2/authorize");
+        const discordIssuer = new Issuer({
+            issuer: 'https://discord.com',
+            authorization_endpoint: 'https://discord.com/api/oauth2/authorize',
+            token_endpoint: 'https://discord.com/api/oauth2/token',
+            userinfo_endpoint: 'https://discord.com/api/v10/users/@me',
+            jwks_uri: 'https://discord.com/.well-known/jwks.json',
+        });
 
         const discordClient = new discordIssuer.Client({
             client_id: clientId,
