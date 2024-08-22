@@ -153,12 +153,14 @@ async function main() {
                 const userClaims = tokenSet.claims();
                 console.log('User Claims:', userClaims);
 
-                await db.ref(`users/${userClaims.sub}`).set({
+                const userData = {
                     name: userClaims.name,
                     nickname: userClaims.preferred_username,
                     profile: userClaims.profile,
-                    picture: userClaims.picture,
-                });
+                    picture: userClaims.picture || null, // Handle missing picture
+                };
+
+                await db.ref(`users/${userClaims.sub}`).set(userData);
 
             } catch (error) {
                 console.error('Error handling OAuth callback:', error);
