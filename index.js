@@ -1,9 +1,9 @@
-const express = require('express');
-const { Issuer, Client } = require('openid-client');
-const cookieParser = require('cookie-parser');
-const path = require('path');
-const { fileURLToPath } = require('url');
-const dotenv = require('dotenv');
+import express from 'express';
+import { Issuer, Client } from 'openid-client';
+import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 // Load environment variables from .env file
 dotenv.config();
