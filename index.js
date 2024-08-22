@@ -41,11 +41,12 @@ async function main() {
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
                 try {
-                    const tokenSet = discordClient.TokenSet.from(req.signedCookies.tokenSet);
+                    const tokenSet = JSON.parse(req.signedCookies.tokenSet);
 
-                    if (tokenSet.expired()) {
+                    if (new Date().getTime() / 1000 >= tokenSet.expires_at) {
+                        // Token is expired, refresh it
                         const refreshedTokenSet = await discordClient.refresh(tokenSet.refresh_token);
-                        res.cookie('tokenSet', refreshedTokenSet, secureCookieConfig);
+                        res.cookie('tokenSet', JSON.stringify(refreshedTokenSet), secureCookieConfig);
                     }
 
                     next();
@@ -83,8 +84,8 @@ async function main() {
             try {
                 const tokenSet = await discordClient.callback(redirectUri, params, { state });
 
-                // Store tokenSet in cookies or session
-                res.cookie('tokenSet', tokenSet, secureCookieConfig);
+                // Store tokenSet in cookies
+                res.cookie('tokenSet', JSON.stringify(tokenSet), secureCookieConfig);
 
                 const user = tokenSet.claims();
                 const discordData = {
@@ -102,7 +103,7 @@ async function main() {
         });
 
         app.get('/home', checkLoggedIn, (req, res) => {
-            const tokenSet = req.signedCookies.tokenSet;
+            const tokenSet = req.signedCookies.tokenSet ? JSON.parse(req.signedCookies.tokenSet) : {};
             const user = tokenSet ? tokenSet.claims() : {};
             res.send(`Welcome ${user.username || 'Guest'}`);
         });
