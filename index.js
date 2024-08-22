@@ -69,7 +69,7 @@ async function main() {
         const client = new issuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: [`https://testing45.onrender.com/oauth/callback`],
+            redirect_uris: [`https://your-web-app-url.com/oauth/callback`],
             response_types: ["code"],
             scope: "openid profile",
             id_token_signed_response_alg: "ES256",
@@ -126,15 +126,16 @@ async function main() {
             const params = client.callbackParams(req);
             const state = req.signedCookies.state;
             const nonce = req.signedCookies.nonce;
+            const { token, discordId } = req.query;
 
-            if (!state || !nonce) {
-                console.error('State or nonce missing in cookies');
-                return res.status(400).send('State or nonce missing in cookies');
+            if (!state || !nonce || !token || !discordId) {
+                console.error('State, nonce, token, or Discord ID missing.');
+                return res.status(400).send('State, nonce, token, or Discord ID missing.');
             }
 
             try {
                 const tokenSet = await client.callback(
-                    `https://testing45.onrender.com/oauth/callback`,
+                    `https://your-web-app-url.com/oauth/callback`,
                     params,
                     {
                         state,
@@ -152,12 +153,24 @@ async function main() {
                 const userClaims = tokenSet.claims();
                 console.log('User Claims:', userClaims);
 
-                await db.ref(`users/${userClaims.sub}`).set({
-                    name: userClaims.name,
-                    nickname: userClaims.preferred_username,
-                    profile: userClaims.profile,
-                    picture: userClaims.picture,
-                });
+                // Update verification record with the Discord ID and user data
+                const verificationRef = db.ref(`verifications/${token}`);
+                const verificationRecord = await verificationRef.once('value');
+
+                if (verificationRecord.exists()) {
+                    await verificationRef.update({ verified: true });
+                    await db.ref(`users/${userClaims.sub}`).set({
+                        name: userClaims.name,
+                        nickname: userClaims.preferred_username,
+                        profile: userClaims.profile,
+                        picture: userClaims.picture,
+                        discordId: discordId
+                    });
+
+                    res.send('Your account has been verified!');
+                } else {
+                    res.status(400).send('Invalid verification token.');
+                }
 
             } catch (error) {
                 console.error('Error handling OAuth callback:', error);
@@ -170,37 +183,35 @@ async function main() {
             res.send(getHomeHtml(tokenSet.claims()));
         });
 
-        app.get("/verify", async (req, res) => {
-            const { token, discordId } = req.query;
+        app.post("/message", checkLoggedIn, async (req, res) => {
+            const message = req.body.message;
+            const apiUrl = `https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic}`;
 
-            if (!token || !discordId) {
-                return res.status(400).send('Verification token and Discord ID are required.');
-            }
-
-            // Retrieve the verification record from Firebase
-            const verificationRef = db.ref(`verifications/${token}`);
-            const verificationRecord = await verificationRef.once('value');
-
-            if (!verificationRecord.exists()) {
-                return res.status(400).send('Invalid verification token.');
-            }
-
-            const verificationData = verificationRecord.val();
-
-            // Verify the user and update the record
-            if (verificationData.discordId === discordId) {
-                await verificationRef.update({ verified: true });
-                res.send('Your account has been verified!');
-            } else {
-                res.status(400).send('Discord ID does not match.');
+            try {
+                const result = await client.requestResource(
+                    apiUrl,
+                    req.signedCookies.tokenSet.access_token,
+                    {
+                        method: "POST",
+                        body: JSON.stringify({ message }),
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                    }
+                );
+                console.log(result);
+                res.sendStatus(result.statusCode);
+            } catch (error) {
+                console.error(error);
+                res.sendStatus(500);
             }
         });
 
         app.listen(port, () => {
-            console.log(`Server running at http://localhost:${port}`);
+            console.log(`Server is running on port: ${port}`);
         });
     } catch (error) {
-        console.error('Error in main function:', error);
+        console.error('Error in main execution:', error);
         process.exit(1);
     }
 }
