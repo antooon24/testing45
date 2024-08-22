@@ -94,6 +94,8 @@ async function main() {
             const params = discordClient.callbackParams(req);
             const state = req.signedCookies.state;
 
+            console.log('State from cookies:', state);  // Debugging line
+
             if (!state) {
                 return res.status(400).send('State missing in cookies');
             }
