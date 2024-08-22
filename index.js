@@ -48,7 +48,7 @@ async function main() {
         const discordClient = new discordIssuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: ["https://your-app-url/oauth/discord-callback"], // Update with your actual redirect URI
+            redirect_uris: ["https://testing45.onrender.com/oauth/discord-callback"], // Update with your actual redirect URI
             response_types: ["code"],
             scope: "identify",
         });
@@ -105,7 +105,7 @@ async function main() {
 
             try {
                 const tokenSet = await discordClient.callback(
-                    "https://your-app-url/oauth/discord-callback", // Update with your actual redirect URI
+                    "https://testing45.onrender.com/oauth/discord-callback", // Update with your actual redirect URI
                     params,
                     { state }
                 );
