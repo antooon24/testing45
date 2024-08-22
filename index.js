@@ -70,7 +70,7 @@ async function main() {
         const client = new issuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: [https://testing45.onrender.com/oauth/callback],
+            redirect_uris: ["https://testing45.onrender.com/oauth/callback"], // Ensure this is a string
             response_types: ["code"],
             scope: "openid profile",
             id_token_signed_response_alg: "ES256",
@@ -117,7 +117,7 @@ async function main() {
 
         app.get("/logout", async (req, res) => {
             if (req.signedCookies.tokenSet) {
-                client.revoke(req.signedCookies.tokenSet.refresh_token);
+                await client.revoke(req.signedCookies.tokenSet.refresh_token);
             }
 
             res.clearCookie("tokenSet").redirect("/");
@@ -135,7 +135,7 @@ async function main() {
 
             try {
                 const tokenSet = await client.callback(
-                    https://testing45.onrender.com/oauth/callback,
+                    "https://testing45.onrender.com/oauth/callback",
                     params,
                     {
                         state,
@@ -153,7 +153,7 @@ async function main() {
                 const userClaims = tokenSet.claims();
                 console.log('User Claims:', userClaims);
 
-                await db.ref(users/${userClaims.sub}).set({
+                await db.ref(`users/${userClaims.sub}`).set({
                     name: userClaims.name,
                     nickname: userClaims.preferred_username,
                     profile: userClaims.profile,
@@ -173,7 +173,7 @@ async function main() {
 
         app.post("/message", checkLoggedIn, async (req, res) => {
             const message = req.body.message;
-            const apiUrl = https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic};
+            const apiUrl = `https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic}`;
 
             try {
                 const result = await client.requestResource(
@@ -196,7 +196,7 @@ async function main() {
         });
 
         app.listen(port, () => {
-            console.log(Server is running on port: ${port});
+            console.log(`Server is running on port: ${port}`);
         });
     } catch (error) {
         console.error('Error in main execution:', error);
