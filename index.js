@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { readFile } from 'fs/promises';
 import dotenv from 'dotenv';
 
 // Load environment variables from .env file
@@ -69,7 +70,7 @@ async function main() {
         const client = new issuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: [`https://testing45.onrender.com/oauth/callback`],
+            redirect_uris: [https://testing45.onrender.com/oauth/callback],
             response_types: ["code"],
             scope: "openid profile",
             id_token_signed_response_alg: "ES256",
@@ -101,12 +102,10 @@ async function main() {
         app.get("/login", (req, res) => {
             const state = generators.state();
             const nonce = generators.nonce();
-            const discordId = req.query.discordId; // Get the Discord ID from query params
 
             res
                 .cookie("state", state, secureCookieConfig)
                 .cookie("nonce", nonce, secureCookieConfig)
-                .cookie("discordId", discordId, secureCookieConfig) // Save the Discord ID in a cookie
                 .redirect(
                     client.authorizationUrl({
                         scope: client.scope,
@@ -128,16 +127,15 @@ async function main() {
             const params = client.callbackParams(req);
             const state = req.signedCookies.state;
             const nonce = req.signedCookies.nonce;
-            const discordId = req.signedCookies.discordId; // Get the Discord ID from cookies
 
-            if (!state || !nonce || !discordId) {
-                console.error('State, nonce, or Discord ID missing.');
-                return res.status(400).send('State, nonce, or Discord ID missing.');
+            if (!state || !nonce) {
+                console.error('State or nonce missing in cookies');
+                return res.status(400).send('State or nonce missing in cookies');
             }
 
             try {
                 const tokenSet = await client.callback(
-                    `https://testing45.onrender.com/oauth/callback`,
+                    https://testing45.onrender.com/oauth/callback,
                     params,
                     {
                         state,
@@ -149,22 +147,18 @@ async function main() {
                     .cookie("tokenSet", tokenSet, secureCookieConfig)
                     .clearCookie("state")
                     .clearCookie("nonce")
-                    .clearCookie("discordId")
                     .redirect("/home");
 
                 // Save user data to Firebase
                 const userClaims = tokenSet.claims();
                 console.log('User Claims:', userClaims);
 
-                await db.ref(`users/${userClaims.sub}`).set({
+                await db.ref(users/${userClaims.sub}).set({
                     name: userClaims.name,
                     nickname: userClaims.preferred_username,
                     profile: userClaims.profile,
                     picture: userClaims.picture,
-                    discordId: discordId // Save Discord ID along with user data
                 });
-
-                res.send('Your account has been verified and linked to Discord!');
 
             } catch (error) {
                 console.error('Error handling OAuth callback:', error);
@@ -179,7 +173,7 @@ async function main() {
 
         app.post("/message", checkLoggedIn, async (req, res) => {
             const message = req.body.message;
-            const apiUrl = `https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic}`;
+            const apiUrl = https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic};
 
             try {
                 const result = await client.requestResource(
@@ -202,7 +196,7 @@ async function main() {
         });
 
         app.listen(port, () => {
-            console.log(`Server is running on port: ${port}`);
+            console.log(Server is running on port: ${port});
         });
     } catch (error) {
         console.error('Error in main execution:', error);
