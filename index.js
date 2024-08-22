@@ -40,21 +40,30 @@ async function main() {
 
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
-                try {
-                    const tokenSet = JSON.parse(req.signedCookies.tokenSet);
+                let tokenSet;
 
-                    // Check token expiry and refresh if needed
-                    if (new Date().getTime() / 1000 >= tokenSet.expires_at) {
+                // Check if tokenSet is a valid JSON string
+                try {
+                    tokenSet = JSON.parse(req.signedCookies.tokenSet);
+                } catch (parseError) {
+                    console.error('Error parsing tokenSet:', parseError);
+                    return res.status(400).send('Invalid token data');
+                }
+
+                // Check token expiry and refresh if needed
+                if (new Date().getTime() / 1000 >= tokenSet.expires_at) {
+                    try {
                         const refreshedTokenSet = await discordClient.refresh(tokenSet.refresh_token);
                         res.cookie('tokenSet', JSON.stringify(refreshedTokenSet), secureCookieConfig);
+                        tokenSet = refreshedTokenSet; // Update tokenSet after refresh
+                    } catch (refreshError) {
+                        console.error('Error refreshing token:', refreshError);
+                        return res.status(500).send('Error refreshing token');
                     }
-
-                    req.tokenSet = JSON.parse(req.signedCookies.tokenSet);
-                    next();
-                } catch (error) {
-                    console.error('Error refreshing token:', error);
-                    res.status(500).send('Error refreshing token');
                 }
+
+                req.tokenSet = tokenSet; // Attach tokenSet to request object
+                next();
             } else {
                 res.redirect('/login');
             }
@@ -85,6 +94,7 @@ async function main() {
             try {
                 const tokenSet = await discordClient.callback(redirectUri, params, { state });
 
+                // Store tokenSet in cookies
                 res.cookie('tokenSet', JSON.stringify(tokenSet), secureCookieConfig);
 
                 // Optionally store or use tokenSet here
