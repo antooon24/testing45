@@ -8,14 +8,16 @@ import { fileURLToPath } from 'url';
 import { readFile } from 'fs/promises';
 import dotenv from 'dotenv';
 
-dotenv.config();  // Load environment variables from .env file
+// Load environment variables from .env file
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const serviceAccountPath = path.join(__dirname, '/serviceAccountKey.json');
 
-// Load the service account credentials from environment variable
-const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'));
+// Decode the base64 encoded service account JSON
+const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+const serviceAccountJson = Buffer.from(serviceAccountBase64, 'base64').toString('utf8');
+const serviceAccount = JSON.parse(serviceAccountJson);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -23,15 +25,14 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-
 const app = express();
-const port = process.env.PORT || 3000;  // Use PORT from environment or default to 3000
+const port = process.env.PORT || 3000; // Use PORT from environment or default to 3000
 const clientId = process.env.ROBLOX_CLIENT_ID;
 const clientSecret = process.env.ROBLOX_CLIENT_SECRET;
 
 const cookieSecret = process.env.COOKIE_SECRET || generators.random();
 const secureCookieConfig = {
-    secure: false, // Set to true in production with HTTPS
+    secure: process.env.NODE_ENV === 'production', // Set to true in production with HTTPS
     httpOnly: true,
     signed: true,
 };
@@ -108,10 +109,6 @@ async function main() {
         const state = req.signedCookies.state;
         const nonce = req.signedCookies.nonce;
 
-        console.log('Incoming Cookies:', req.cookies);
-        console.log('State from Cookies:', state);
-        console.log('Nonce from Cookies:', nonce);
-
         if (!state || !nonce) {
             console.error('State or nonce missing in cookies');
             return res.status(400).send('State or nonce missing in cookies');
@@ -152,7 +149,6 @@ async function main() {
 
     app.get("/home", checkLoggedIn, (req, res) => {
         const tokenSet = new TokenSet(req.signedCookies.tokenSet);
-
         res.send(getHomeHtml(tokenSet.claims()));
     });
 
