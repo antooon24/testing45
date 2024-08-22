@@ -35,18 +35,21 @@ const secureCookieConfig = {
     signed: true,
 };
 
+// Middleware setup
 app.use(cookieParser(cookieSecret));
 app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
+        // Discover issuers
         const robloxIssuer = await Issuer.discover(
             "https://apis.roblox.com/oauth/.well-known/openid-configuration"
         );
         const discordIssuer = await Issuer.discover(
-            "https://discord.com/api/oauth2/authorize"
+            "https://discord.com/.well-known/openid-configuration"
         );
 
+        // Create clients
         const robloxClient = new robloxIssuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
@@ -64,14 +67,16 @@ async function main() {
             scope: "identify",
         });
 
-        client[custom.clock_tolerance] = 180;
+        // Adjust clock tolerance
+        custom.clock_tolerance = 180;
 
+        // Middleware to check if the user is logged in
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
                 let tokenSet = new TokenSet(req.signedCookies.tokenSet);
 
                 if (tokenSet.expired()) {
-                    tokenSet = await client.refresh(tokenSet);
+                    tokenSet = await robloxClient.refresh(tokenSet);
                     res.cookie("tokenSet", tokenSet, secureCookieConfig);
                 }
 
@@ -81,6 +86,7 @@ async function main() {
             }
         }
 
+        // Routes
         app.get("/", checkLoggedIn, (req, res) => {
             res.redirect("/home");
         });
@@ -122,7 +128,7 @@ async function main() {
                     robloxId: userClaims.sub,
                     robloxName: userClaims.name,
                     robloxProfile: userClaims.profile,
-                    robloxPicture: userClaims.picture || null,  // Handle missing picture
+                    robloxPicture: userClaims.picture || null,
                 };
 
                 res.cookie("robloxData", robloxData, secureCookieConfig);
@@ -198,4 +204,3 @@ async function main() {
 }
 
 main();
-	
