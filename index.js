@@ -1,5 +1,5 @@
 import express from 'express';
-import { Issuer, Client } from 'openid-client';
+import { Issuer } from 'openid-client';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -41,7 +41,7 @@ async function main() {
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
                 try {
-                    const tokenSet = new discordClient.TokenSet(req.signedCookies.tokenSet);
+                    const tokenSet = discordClient.TokenSet.from(req.signedCookies.tokenSet);
 
                     if (tokenSet.expired()) {
                         const refreshedTokenSet = await discordClient.refresh(tokenSet.refresh_token);
