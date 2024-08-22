@@ -1,6 +1,5 @@
 import express from 'express';
 import { Issuer, TokenSet, custom, generators } from 'openid-client';
-import { getHomeHtml } from './getHomeHtml.js';
 import cookieParser from 'cookie-parser';
 import admin from 'firebase-admin';
 import path from 'path';
@@ -26,7 +25,11 @@ const db = admin.database();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Discord OAuth configuration
+const clientId = process.env.DISCORD_CLIENT_ID;
+const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 const cookieSecret = process.env.COOKIE_SECRET || generators.random();
+
 const secureCookieConfig = {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
@@ -38,15 +41,11 @@ app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
-        // Discover Discord issuer
-        const discordIssuer = await Issuer.discover(
-            "https://discord.com/.well-known/openid-configuration"
-        );
+        const discordIssuer = await Issuer.discover("https://discord.com/api/oauth2/authorize");
 
-        // Create Discord client
         const discordClient = new discordIssuer.Client({
-            client_id: process.env.DISCORD_CLIENT_ID,
-            client_secret: process.env.DISCORD_CLIENT_SECRET,
+            client_id: clientId,
+            client_secret: clientSecret,
             redirect_uris: ["https://testing45.onrender.com/oauth/discord-callback"],
             response_types: ["code"],
             scope: "identify",
@@ -54,7 +53,6 @@ async function main() {
 
         custom.clock_tolerance = 180;
 
-        // Middleware to check if the user is logged in
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
                 let tokenSet = new TokenSet(req.signedCookies.tokenSet);
@@ -70,7 +68,6 @@ async function main() {
             }
         }
 
-        // Routes
         app.get("/", checkLoggedIn, (req, res) => {
             res.redirect("/home");
         });
@@ -81,7 +78,7 @@ async function main() {
                 .cookie("state", state, secureCookieConfig)
                 .redirect(
                     discordClient.authorizationUrl({
-                        scope: discordClient.scope,
+                        scope: "identify",
                         state,
                     })
                 );
@@ -121,7 +118,7 @@ async function main() {
 
         app.get("/home", checkLoggedIn, (req, res) => {
             const discordData = req.signedCookies.discordData || {};
-            res.send(getHomeHtml(discordData));
+            res.send(`<html><body><h1>Welcome, ${discordData.discordUsername || 'User'}!</h1></body></html>`);
         });
 
         app.listen(port, () => {
