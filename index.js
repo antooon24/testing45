@@ -149,7 +149,7 @@ async function main() {
                 }
 
                 // Verify the token using the ES256 algorithm
-                jwt.verify(robloxIdToken, publicKey, { algorithms: ['ES256'] });
+                jwt.verify(robloxIdToken, `-----BEGIN CERTIFICATE-----\n${publicKey}\n-----END CERTIFICATE-----`, { algorithms: ['ES256'] });
 
                 res.cookie('robloxTokenSet', robloxTokenSet, secureCookieConfig)
                    .clearCookie('state')
@@ -228,12 +228,11 @@ async function main() {
         });
 
         app.listen(port, () => {
-            console.log(`Server is running on port ${port}`);
+            console.log(`Server running on port ${port}`);
         });
 
     } catch (error) {
-        console.error('Error in main execution:', error);
-        process.exit(1);
+        console.error('Error setting up OAuth clients:', error);
     }
 }
 
