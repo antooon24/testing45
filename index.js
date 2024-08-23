@@ -5,8 +5,8 @@ import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import jwt from 'jsonwebtoken';  // For verifying Roblox JWTs
-import axios from 'axios';        // For fetching Roblox public keys
+import jwt from 'jsonwebtoken'; // For verifying Roblox JWTs
+import axios from 'axios'; // For fetching Roblox public keys
 
 dotenv.config();
 
@@ -108,6 +108,11 @@ async function main() {
             res.redirect('/home');
         });
 
+        app.get('/login', (req, res) => {
+            // Redirect to either Roblox or Discord login
+            res.redirect('/login/roblox');
+        });
+
         app.get('/login/roblox', (req, res) => {
             const state = generators.state();
             const nonce = generators.nonce();
@@ -199,12 +204,12 @@ async function main() {
 
                 const userData = {
                     name: userClaims.name,
+                    nickname: userClaims.preferred_username,
                     email: userClaims.email,
-                    profile: userClaims.profile,
                     picture: userClaims.picture || null,
                 };
 
-                await db.ref(`users/${userClaims.sub}`).set(userData);
+                await db.ref(`users/${userClaims.sub}`).update({ discordId: userClaims.sub, ...userData });
 
             } catch (error) {
                 console.error('Error handling Discord OAuth callback:', error);
@@ -213,14 +218,15 @@ async function main() {
         });
 
         app.get('/home', checkLoggedIn, (req, res) => {
-            const robloxUserData = req.robloxTokenSet ? req.robloxTokenSet.claims() : {};
-            const discordUserData = req.discordTokenSet ? req.discordTokenSet.claims() : {};
-            res.send(`Roblox User: ${robloxUserData.name}<br>Discord User: ${discordUserData.name}`);
+            const robloxTokenSet = req.robloxTokenSet;
+            const discordTokenSet = req.discordTokenSet;
+            res.send(`<h1>Home</h1><p>Roblox User: ${robloxTokenSet.claims().name}</p><p>Discord User: ${discordTokenSet.claims().name}</p>`);
         });
 
         app.listen(port, () => {
-            console.log(`Server is running on http://localhost:${port}`);
+            console.log(`Server is running on port ${port}`);
         });
+
     } catch (error) {
         console.error('Error in main execution:', error);
         process.exit(1);
