@@ -155,4 +155,17 @@ async function main() {
                 res.send(`Welcome ${userInfo.username || 'Guest'}`);
             } catch (error) {
                 console.error('Error fetching user info:', error);
-        
+                res.status(500).send('Error fetching user info');
+            }
+        });
+
+        app.listen(port, () => {
+            console.log(`Server is running on http://localhost:${port}`);
+        });
+    } catch (error) {
+        console.error('Error in main execution:', error);
+        process.exit(1);
+    }
+}
+
+main();
