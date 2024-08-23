@@ -27,11 +27,11 @@ const port = process.env.PORT || 3000;
 
 const robloxClientId = process.env.ROBLOX_CLIENT_ID;
 const robloxClientSecret = process.env.ROBLOX_CLIENT_SECRET;
-const robloxRedirectUri = `https://testing45.onrender.com/oauth/roblox-callback`;
+const robloxRedirectUri = `https://yourdomain.com/oauth/roblox-callback`;
 
 const discordClientId = process.env.DISCORD_CLIENT_ID;
 const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
-const discordRedirectUri = `https://testing45.onrender.com/oauth/discord-callback`;
+const discordRedirectUri = `https://yourdomain.com/oauth/discord-callback`;
 
 const cookieSecret = process.env.COOKIE_SECRET || 'random_secret_string';
 const secureCookieConfig = {
