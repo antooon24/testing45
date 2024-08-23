@@ -59,11 +59,13 @@ async function main() {
                 let tokenSet;
 
                 try {
+                    // Check if the tokenSet is a string and parse it if necessary
                     tokenSet = req.signedCookies.tokenSet;
                     if (typeof tokenSet === 'string') {
                         tokenSet = JSON.parse(tokenSet);
                     }
 
+                    // Validate tokenSet
                     if (typeof tokenSet !== 'object' || tokenSet === null) {
                         throw new Error('tokenSet is not a valid object');
                     }
@@ -79,15 +81,8 @@ async function main() {
                         res.cookie('tokenSet', JSON.stringify(refreshedTokenSet), secureCookieConfig);
                         tokenSet = refreshedTokenSet;
                     } catch (refreshError) {
-                        if (refreshError.error === 'invalid_grant') {
-                            console.warn('Refresh token is invalid or expired. Prompting re-authentication.');
-                            res.clearCookie('tokenSet');
-                            res.clearCookie('state');
-                            return res.redirect('/login');
-                        } else {
-                            console.error('Error refreshing token:', refreshError);
-                            return res.status(500).send('Error refreshing token');
-                        }
+                        console.error('Error refreshing token:', refreshError);
+                        return res.status(500).send('Error refreshing token');
                     }
                 }
 
