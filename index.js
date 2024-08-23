@@ -136,7 +136,10 @@ async function main() {
             }
 
             try {
+                // Handle the callback
                 const robloxTokenSet = await robloxClient.callback(robloxRedirectUri, params, { state, nonce });
+
+                // Verify the Roblox ID Token manually
                 const robloxIdToken = robloxTokenSet.id_token;
                 const decodedToken = jwt.decode(robloxIdToken, { complete: true });
                 const publicKey = await getRobloxPublicKey(decodedToken.header.kid);
@@ -145,6 +148,7 @@ async function main() {
                     throw new Error('Public key not found');
                 }
 
+                // Verify the token using the ES256 algorithm
                 jwt.verify(robloxIdToken, publicKey, { algorithms: ['ES256'] });
 
                 res.cookie('robloxTokenSet', robloxTokenSet, secureCookieConfig)
