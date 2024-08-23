@@ -1,12 +1,12 @@
 import express from 'express';
-import { Issuer, TokenSet, custom, generators } from 'openid-client';
-import { getHomeHtml } from './getHomeHtml.js';
+import { Issuer, generators } from 'openid-client';
 import cookieParser from 'cookie-parser';
-import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { readFile } from 'fs/promises';
 import dotenv from 'dotenv';
+import axios from 'axios';  // Use axios to make API requests
+import admin from 'firebase-admin';  // Import Firebase Admin SDK
+import { Buffer } from 'buffer';  // Import Buffer for Base64 decoding
 
 // Load environment variables from .env file
 dotenv.config();
@@ -14,16 +14,16 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Decode the base64 encoded service account JSON
-const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-if (!serviceAccountBase64) {
+// Decode Base64-encoded Firebase service account key
+const base64ServiceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+if (!base64ServiceAccountKey) {
     console.error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set.');
     process.exit(1);
 }
 
 let serviceAccountJson;
 try {
-    serviceAccountJson = Buffer.from(serviceAccountBase64, 'base64').toString('utf8');
+    serviceAccountJson = Buffer.from(base64ServiceAccountKey, 'base64').toString('utf8');
 } catch (error) {
     console.error('Error decoding FIREBASE_SERVICE_ACCOUNT_KEY:', error);
     process.exit(1);
@@ -37,6 +37,7 @@ try {
     process.exit(1);
 }
 
+// Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: process.env.FIREBASE_DATABASE_URL,
@@ -44,161 +45,124 @@ admin.initializeApp({
 
 const db = admin.database();
 const app = express();
-const port = process.env.PORT || 3000; // Use PORT from environment or default to 3000
-const clientId = process.env.ROBLOX_CLIENT_ID;
-const clientSecret = process.env.ROBLOX_CLIENT_SECRET;
+const port = process.env.PORT || 3000;
 
-const cookieSecret = process.env.COOKIE_SECRET || generators.random();
+const clientId = process.env.DISCORD_CLIENT_ID;
+const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+const redirectUri = `https://testing45.onrender.com/oauth/discord-callback/`; // Updated redirect URI
+const cookieSecret = process.env.COOKIE_SECRET || 'random_secret_string';
 const secureCookieConfig = {
     secure: process.env.NODE_ENV === 'production', // Set to true in production with HTTPS
     httpOnly: true,
     signed: true,
 };
 
-// Middleware to simplify interacting with cookies
 app.use(cookieParser(cookieSecret));
-
-// Middleware to parse data from HTML forms
 app.use(express.urlencoded({ extended: true }));
 
 async function main() {
     try {
-        const issuer = await Issuer.discover(
-            "https://apis.roblox.com/oauth/.well-known/openid-configuration"
-        );
-
-        const client = new issuer.Client({
+        const discordIssuer = await Issuer.discover('https://discord.com/.well-known/openid-configuration');
+        const discordClient = new discordIssuer.Client({
             client_id: clientId,
             client_secret: clientSecret,
-            redirect_uris: ["https://testing45.onrender.com/oauth/callback"],
-            response_types: ["code"],
-            scope: "openid profile",
-            id_token_signed_response_alg: "ES256",
+            redirect_uris: [redirectUri],
+            response_types: ['code'],
+            scope: 'identify openid',
         });
 
-        client[custom.clock_tolerance] = 180;
-
-        // Middleware to ensure user is logged in, refreshes tokens if needed
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
-                let tokenSet = new TokenSet(req.signedCookies.tokenSet);
+                let tokenSet;
 
-                if (tokenSet.expired()) {
-                    tokenSet = await client.refresh(tokenSet);
-                    res.cookie("tokenSet", tokenSet, secureCookieConfig);
+                try {
+                    tokenSet = JSON.parse(req.signedCookies.tokenSet);
+                } catch (parseError) {
+                    console.error('Error parsing tokenSet:', parseError);
+                    return res.status(400).send('Invalid token data');
                 }
 
+                if (new Date().getTime() / 1000 >= tokenSet.expires_at) {
+                    try {
+                        const refreshedTokenSet = await discordClient.refresh(tokenSet.refresh_token);
+                        res.cookie('tokenSet', JSON.stringify(refreshedTokenSet), secureCookieConfig);
+                        tokenSet = refreshedTokenSet;
+                    } catch (refreshError) {
+                        console.error('Error refreshing token:', refreshError);
+                        return res.status(500).send('Error refreshing token');
+                    }
+                }
+
+                req.tokenSet = tokenSet;
                 next();
             } else {
-                res.redirect("/login");
+                res.redirect('/login');
             }
         }
 
-        // Routes
-        app.get("/", checkLoggedIn, (req, res) => {
-            res.redirect("/home");
+        app.get('/', checkLoggedIn, (req, res) => {
+            res.redirect('/home');
         });
 
-        app.get("/login", (req, res) => {
+        app.get('/login', (req, res) => {
             const state = generators.state();
-            const nonce = generators.nonce();
-
-            res
-                .cookie("state", state, secureCookieConfig)
-                .cookie("nonce", nonce, secureCookieConfig)
-                .redirect(
-                    client.authorizationUrl({
-                        scope: client.scope,
-                        state,
-                        nonce,
-                    })
-                );
+            res.cookie('state', state, secureCookieConfig)
+                .redirect(discordClient.authorizationUrl({
+                    scope: discordClient.scope,
+                    state,
+                    redirect_uri: redirectUri,
+                }));
         });
 
-        app.get("/logout", async (req, res) => {
-            if (req.signedCookies.tokenSet) {
-                client.revoke(req.signedCookies.tokenSet.refresh_token);
-            }
-
-            res.clearCookie("tokenSet").redirect("/");
-        });
-
-        app.get("/oauth/callback", async (req, res) => {
-            const params = client.callbackParams(req);
+        app.get('/oauth/discord-callback/', async (req, res) => {
+            const params = discordClient.callbackParams(req);
             const state = req.signedCookies.state;
-            const nonce = req.signedCookies.nonce;
 
-            if (!state || !nonce) {
-                console.error('State or nonce missing in cookies');
-                return res.status(400).send('State or nonce missing in cookies');
+            if (!state) {
+                return res.status(400).send('State missing in cookies');
             }
 
             try {
-                const tokenSet = await client.callback(
-                    "https://testing45.onrender.com/oauth/callback",
-                    params,
-                    {
-                        state,
-                        nonce,
-                    }
-                );
+                const tokenSet = await discordClient.callback(redirectUri, params, { state });
 
-                res
-                    .cookie("tokenSet", tokenSet, secureCookieConfig)
-                    .clearCookie("state")
-                    .clearCookie("nonce")
-                    .redirect("/home");
+                // Store tokenSet in cookies
+                res.cookie('tokenSet', JSON.stringify(tokenSet), secureCookieConfig);
 
-                // Save user data to Firebase
-                const userClaims = tokenSet.claims();
-                console.log('User Claims:', userClaims);
-
-                const userData = {
-                    name: userClaims.name,
-                    nickname: userClaims.preferred_username,
-                    profile: userClaims.profile,
-                    picture: userClaims.picture || null, // Handle missing picture
-                };
-
-                await db.ref(`users/${userClaims.sub}`).set(userData);
-
+                res.redirect('/home');
             } catch (error) {
-                console.error('Error handling OAuth callback:', error);
-                res.status(500).send('Error handling OAuth callback');
+                console.error('Error during Discord OAuth callback:', error);
+                res.status(500).send('Error during Discord OAuth callback');
             }
         });
 
-        app.get("/home", checkLoggedIn, (req, res) => {
-            const tokenSet = new TokenSet(req.signedCookies.tokenSet);
-            res.send(getHomeHtml(tokenSet.claims()));
-        });
-
-        app.post("/message", checkLoggedIn, async (req, res) => {
-            const message = req.body.message;
-            const apiUrl = `https://apis.roblox.com/messaging-service/v1/universes/${req.body.universeId}/topics/${req.body.topic}`;
+        app.get('/home', checkLoggedIn, async (req, res) => {
+            const tokenSet = req.tokenSet || {};
+            const accessToken = tokenSet.access_token;
 
             try {
-                const result = await client.requestResource(
-                    apiUrl,
-                    req.signedCookies.tokenSet.access_token,
-                    {
-                        method: "POST",
-                        body: JSON.stringify({ message }),
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
+                // Fetch user info from Discord API using the access token
+                const userInfoResponse = await axios.get('https://discord.com/api/users/@me', {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`
                     }
-                );
-                console.log(result);
-                res.sendStatus(result.statusCode);
+                });
+
+                const userInfo = userInfoResponse.data;
+                console.log('User Info:', userInfo);  // Debug log to check user info content
+
+                // Send user info to Firebase Realtime Database
+                const ref = db.ref('users/' + userInfo.id);  // Save user data under 'users/{userId}'
+                await ref.set(userInfo);
+
+                res.send(`Welcome ${userInfo.username || 'Guest'}`);
             } catch (error) {
-                console.error(error);
-                res.sendStatus(500);
+                console.error('Error fetching user info:', error);
+                res.status(500).send('Error fetching user info');
             }
         });
 
         app.listen(port, () => {
-            console.log(`Server is running on port: ${port}`);
+            console.log(`Server is running on http://localhost:${port}`);
         });
     } catch (error) {
         console.error('Error in main execution:', error);
