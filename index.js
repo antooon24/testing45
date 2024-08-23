@@ -1,3 +1,5 @@
+import jwt from 'jsonwebtoken';
+import axios from 'axios';
 import express from 'express';
 import { Issuer, TokenSet, custom, generators } from 'openid-client';
 import cookieParser from 'cookie-parser';
@@ -125,6 +127,12 @@ async function main() {
 
             try {
                 const robloxTokenSet = await robloxClient.callback(robloxRedirectUri, params, { state, nonce });
+
+                // Decode and manually verify the token
+                const robloxIdToken = robloxTokenSet.id_token;
+                const robloxPublicKey = await getRobloxPublicKey(); // Implement this function to fetch Roblox public keys
+                const decodedToken = jwt.verify(robloxIdToken, robloxPublicKey, { algorithms: ['ES256'] });
+
                 res.cookie('robloxTokenSet', robloxTokenSet, secureCookieConfig)
                    .clearCookie('state')
                    .clearCookie('nonce')
@@ -205,6 +213,15 @@ async function main() {
         console.error('Error in main execution:', error);
         process.exit(1);
     }
+}
+
+// Function to fetch Roblox public keys (implement as needed)
+async function getRobloxPublicKey() {
+    // Example URL, replace with the actual URL to fetch public keys
+    const response = await axios.get('https://apis.roblox.com/oauth/jwk');
+    const keys = response.data.keys;
+    // Implement logic to find the correct key for your token
+    return keys[0].x5c[0]; // Example: return the key as needed
 }
 
 main();
