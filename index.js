@@ -38,14 +38,11 @@ const secureCookieConfig = {
     signed: true,
 };
 
-// Middleware
 app.use(cookieParser(cookieSecret));
 app.use(express.urlencoded({ extended: true }));
 
-// Main function to set up and start the application
 async function main() {
     try {
-        // Discover Discord's OpenID Connect configuration
         const discordIssuer = await Issuer.discover('https://discord.com/.well-known/openid-configuration');
         const discordClient = new discordIssuer.Client({
             client_id: clientId,
@@ -57,7 +54,6 @@ async function main() {
 
         discordClient[custom.clock_tolerance] = 180;
 
-        // Middleware to check if user is logged in
         async function checkLoggedIn(req, res, next) {
             if (req.signedCookies.tokenSet) {
                 let tokenSet;
@@ -76,14 +72,22 @@ async function main() {
                     return res.status(400).send('Invalid token data');
                 }
 
+                // Check token expiration and refresh if necessary
                 if (new Date().getTime() / 1000 >= tokenSet.expires_at) {
                     try {
                         const refreshedTokenSet = await discordClient.refresh(tokenSet.refresh_token);
                         res.cookie('tokenSet', JSON.stringify(refreshedTokenSet), secureCookieConfig);
                         tokenSet = refreshedTokenSet;
                     } catch (refreshError) {
-                        console.error('Error refreshing token:', refreshError);
-                        return res.status(500).send('Error refreshing token');
+                        if (refreshError.error === 'invalid_grant') {
+                            console.warn('Refresh token is invalid or expired. Prompting re-authentication.');
+                            res.clearCookie('tokenSet');
+                            res.clearCookie('state');
+                            return res.redirect('/login');
+                        } else {
+                            console.error('Error refreshing token:', refreshError);
+                            return res.status(500).send('Error refreshing token');
+                        }
                     }
                 }
 
@@ -121,6 +125,7 @@ async function main() {
 
             try {
                 const tokenSet = await discordClient.callback(redirectUri, params, { state });
+
                 res.cookie('tokenSet', JSON.stringify(tokenSet), secureCookieConfig);
                 res.redirect('/home');
             } catch (error) {
@@ -150,17 +155,4 @@ async function main() {
                 res.send(`Welcome ${userInfo.username || 'Guest'}`);
             } catch (error) {
                 console.error('Error fetching user info:', error);
-                res.status(500).send('Error fetching user info');
-            }
-        });
-
-        app.listen(port, () => {
-            console.log(`Server is running on http://localhost:${port}`);
-        });
-    } catch (error) {
-        console.error('Error in main execution:', error);
-        process.exit(1);
-    }
-}
-
-main();
+        
