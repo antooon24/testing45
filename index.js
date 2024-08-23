@@ -1,5 +1,3 @@
-import jwt from 'jsonwebtoken';
-import axios from 'axios';
 import express from 'express';
 import { Issuer, TokenSet, custom, generators } from 'openid-client';
 import cookieParser from 'cookie-parser';
@@ -7,18 +5,17 @@ import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';  // For verifying Roblox JWTs
+import axios from 'axios';        // For fetching Roblox public keys
 
-// Load environment variables from .env file
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Decode Base64-encoded Firebase service account key
-const base64ServiceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-const serviceAccountKey = JSON.parse(Buffer.from(base64ServiceAccountKey, 'base64').toString('utf-8'));
+const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+const serviceAccountKey = JSON.parse(Buffer.from(serviceAccountBase64, 'base64').toString('utf-8'));
 
-// Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccountKey),
     databaseURL: process.env.FIREBASE_DATABASE_URL
@@ -30,15 +27,15 @@ const port = process.env.PORT || 3000;
 
 const robloxClientId = process.env.ROBLOX_CLIENT_ID;
 const robloxClientSecret = process.env.ROBLOX_CLIENT_SECRET;
+const robloxRedirectUri = `https://testing45.onrender.com/oauth/roblox-callback`;
+
 const discordClientId = process.env.DISCORD_CLIENT_ID;
 const discordClientSecret = process.env.DISCORD_CLIENT_SECRET;
-
-const robloxRedirectUri = `https://testing45.onrender.com/oauth/roblox-callback`;
 const discordRedirectUri = `https://testing45.onrender.com/oauth/discord-callback`;
 
 const cookieSecret = process.env.COOKIE_SECRET || 'random_secret_string';
 const secureCookieConfig = {
-    secure: process.env.NODE_ENV === 'production', // Set to true in production with HTTPS
+    secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     signed: true,
 };
@@ -46,9 +43,20 @@ const secureCookieConfig = {
 app.use(cookieParser(cookieSecret));
 app.use(express.urlencoded({ extended: true }));
 
+async function getRobloxPublicKeys() {
+    const response = await axios.get('https://apis.roblox.com/oauth/jwk');
+    return response.data.keys;
+}
+
+async function getRobloxPublicKey(kid) {
+    const keys = await getRobloxPublicKeys();
+    const key = keys.find(k => k.kid === kid);
+    return key ? key.x5c[0] : null;
+}
+
 async function main() {
     try {
-        // Roblox Issuer and Client
+        // Roblox configuration
         const robloxIssuer = await Issuer.discover('https://apis.roblox.com/oauth/.well-known/openid-configuration');
         const robloxClient = new robloxIssuer.Client({
             client_id: robloxClientId,
@@ -60,14 +68,14 @@ async function main() {
 
         robloxClient[custom.clock_tolerance] = 180;
 
-        // Discord Issuer and Client
+        // Discord configuration
         const discordIssuer = await Issuer.discover('https://discord.com/.well-known/openid-configuration');
         const discordClient = new discordIssuer.Client({
             client_id: discordClientId,
             client_secret: discordClientSecret,
             redirect_uris: [discordRedirectUri],
             response_types: ['code'],
-            scope: 'identify openid',
+            scope: 'openid profile email',
         });
 
         discordClient[custom.clock_tolerance] = 180;
@@ -95,12 +103,9 @@ async function main() {
             }
         }
 
+        // Routes
         app.get('/', checkLoggedIn, (req, res) => {
             res.redirect('/home');
-        });
-
-        app.get('/login', (req, res) => {
-            res.redirect('/login/roblox');
         });
 
         app.get('/login/roblox', (req, res) => {
@@ -127,11 +132,15 @@ async function main() {
 
             try {
                 const robloxTokenSet = await robloxClient.callback(robloxRedirectUri, params, { state, nonce });
-
-                // Decode and manually verify the token
                 const robloxIdToken = robloxTokenSet.id_token;
-                const robloxPublicKey = await getRobloxPublicKey(); // Implement this function to fetch Roblox public keys
-                const decodedToken = jwt.verify(robloxIdToken, robloxPublicKey, { algorithms: ['ES256'] });
+                const decodedToken = jwt.decode(robloxIdToken, { complete: true });
+                const publicKey = await getRobloxPublicKey(decodedToken.header.kid);
+
+                if (!publicKey) {
+                    throw new Error('Public key not found');
+                }
+
+                jwt.verify(robloxIdToken, publicKey, { algorithms: ['ES256'] });
 
                 res.cookie('robloxTokenSet', robloxTokenSet, secureCookieConfig)
                    .clearCookie('state')
@@ -145,7 +154,7 @@ async function main() {
                     name: userClaims.name,
                     nickname: userClaims.preferred_username,
                     profile: userClaims.profile,
-                    picture: userClaims.picture || null, // Handle missing picture
+                    picture: userClaims.picture || null,
                 };
 
                 await db.ref(`users/${userClaims.sub}`).set(userData);
@@ -158,41 +167,44 @@ async function main() {
 
         app.get('/login/discord', (req, res) => {
             const state = generators.state();
+            const nonce = generators.nonce();
             res.cookie('state', state, secureCookieConfig)
+               .cookie('nonce', nonce, secureCookieConfig)
                .redirect(discordClient.authorizationUrl({
                    scope: discordClient.scope,
                    state,
-                   redirect_uri: discordRedirectUri,
+                   nonce,
                }));
         });
 
         app.get('/oauth/discord-callback', async (req, res) => {
             const params = discordClient.callbackParams(req);
             const state = req.signedCookies.state;
+            const nonce = req.signedCookies.nonce;
 
-            if (!state) {
-                console.error('State missing in cookies');
-                return res.status(400).send('State missing in cookies');
+            if (!state || !nonce) {
+                console.error('State or nonce missing in cookies');
+                return res.status(400).send('State or nonce missing in cookies');
             }
 
             try {
-                const discordTokenSet = await discordClient.callback(discordRedirectUri, params, { state });
+                const discordTokenSet = await discordClient.callback(discordRedirectUri, params, { state, nonce });
                 res.cookie('discordTokenSet', discordTokenSet, secureCookieConfig)
                    .clearCookie('state')
+                   .clearCookie('nonce')
                    .redirect('/home');
 
                 const userClaims = discordTokenSet.claims();
                 console.log('Discord User Claims:', userClaims);
 
-                // Link Roblox and Discord IDs in Firebase
-                const robloxId = req.robloxTokenSet ? req.robloxTokenSet.claims().sub : null;
-                const discordId = userClaims.sub;
+                const userData = {
+                    name: userClaims.name,
+                    email: userClaims.email,
+                    profile: userClaims.profile,
+                    picture: userClaims.picture || null,
+                };
 
-                if (robloxId) {
-                    await db.ref(`users/${robloxId}`).update({ discordId });
-                }
-
-                await db.ref(`users/${discordId}`).update({ robloxId });
+                await db.ref(`users/${userClaims.sub}`).set(userData);
 
             } catch (error) {
                 console.error('Error handling Discord OAuth callback:', error);
@@ -203,7 +215,7 @@ async function main() {
         app.get('/home', checkLoggedIn, (req, res) => {
             const robloxUserData = req.robloxTokenSet ? req.robloxTokenSet.claims() : {};
             const discordUserData = req.discordTokenSet ? req.discordTokenSet.claims() : {};
-            res.send(`Roblox User: ${robloxUserData.name}, Discord User: ${discordUserData.username}`);
+            res.send(`Roblox User: ${robloxUserData.name}<br>Discord User: ${discordUserData.name}`);
         });
 
         app.listen(port, () => {
@@ -213,15 +225,6 @@ async function main() {
         console.error('Error in main execution:', error);
         process.exit(1);
     }
-}
-
-// Function to fetch Roblox public keys (implement as needed)
-async function getRobloxPublicKey() {
-    // Example URL, replace with the actual URL to fetch public keys
-    const response = await axios.get('https://apis.roblox.com/oauth/jwk');
-    const keys = response.data.keys;
-    // Implement logic to find the correct key for your token
-    return keys[0].x5c[0]; // Example: return the key as needed
 }
 
 main();
