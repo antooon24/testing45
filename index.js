@@ -8,10 +8,11 @@ import axios from 'axios';  // Use axios to make API requests
 import admin from 'firebase-admin';  // Import Firebase Admin SDK
 import { Buffer } from 'buffer';  // Import Buffer for Base64 decoding
 
-// Load environment variables from .env file in the same directory as the script
+// Load environment variables from .env file
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Decode Base64-encoded Firebase service account key
 const base64ServiceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
